@@ -143,7 +143,10 @@ server <- function(input, output, session) {
       "referenceCompound",
       "Select reference compound",
       choices = compounds(),
-      selected = compounds()[1]
+      selected = compounds()[1],
+      options = list(
+        maxOptions = 5000
+      )
     )
   })
   outputOptions(output, 'referenceCompound_ui', suspendWhenHidden = FALSE)
@@ -281,7 +284,7 @@ server <- function(input, output, session) {
   # Handle upload of pre-calculated correlation matrix
   corrMatUpload <- reactive({
     req(input$corrMatUpload)
-    df <- read.csv(input$corrMatUpload$datapath, row.names = 1, header = T)
+    df <- read.csv(input$corrMatUpload$datapath, row.names = 1, header = T, check.names = FALSE)
     return(as.data.frame(df))
   })
 
@@ -342,14 +345,20 @@ server <- function(input, output, session) {
   output$normalCellIdentsRDS <- renderUI({
     RDSseurat <- rdsSeurat()
     RDSseurat <- SetIdent(RDSseurat, value = input$groupByRDS)
-    print(unique(Idents(RDSseurat)))
-    selectInput('normalCellIdentsRDS',
-                choices = unique(Idents(RDSseurat)),
+    all_idents <- unique(Idents(RDSseurat))
+
+
+    selectizeInput('normalCellIdentsRDS',
+                choices = all_idents,
                 label = "Select control cell population(s).",
-                selected = NULL,
                 multiple = T
     )
   })
+
+
+
+
+
 
   output$dimplotRDS <- renderPlot({
     p1 <- Seurat::DimPlot(rdsSeurat(), reduction = input$reductionUseRDS, group.by = input$groupByRDS) +
@@ -368,12 +377,20 @@ server <- function(input, output, session) {
   output$cancerCellIdentsRDS <- renderUI({
     RDSseurat <- rdsSeurat()
     RDSseurat <- SetIdent(RDSseurat, value = input$groupByRDS)
-    selectInput('cancerCellIdentsRDS',
-                choices = unique(Idents(RDSseurat)),
+    all_idents <- unique(Idents(RDSseurat))
+
+    selectizeInput('cancerCellIdentsRDS',
+                choices = all_idents,
                 label = "Which cells are transformed?",
-                selected = NULL,
                 multiple = T
     )
+  })
+
+
+  all_idents <- reactive({
+    RDSseurat <- rdsSeurat()
+    RDSseurat <- SetIdent(RDSseurat, value = input$groupByRDS)
+    unique(Idents(RDSseurat))
   })
 
   output$controlHighlight <- renderPlot({
@@ -513,6 +530,21 @@ server <- function(input, output, session) {
       DefaultAssay(RDSseurat) <- c("RNA_ortho")
     }
 
+    # Apply whatever assay was actually picked in the UI (assay_to_use() reads
+    # input$assayChoice, falling back to RNA/RNA_ortho) -- this step previously
+    # ignored that selection entirely and just kept whatever assay the RDS loaded with.
+    selected_assay <- assay_to_use()
+    print(paste("Using assay:", selected_assay))
+    DefaultAssay(RDSseurat) <- selected_assay
+
+    # SCT assays built from multiple SCTransform() runs (e.g. per-sample) carry mismatched
+    # library-size corrections; FindMarkers() on SCT refuses to compare across them until
+    # PrepSCTFindMarkers() reconciles them onto one scale.
+    if (selected_assay == "SCT") {
+      print("SCT assay selected, running PrepSCTFindMarkers()")
+      RDSseurat <- PrepSCTFindMarkers(RDSseurat, verbose = TRUE)
+    }
+
     if (input$diseaseSignaturesByReplicate == 'By Subject/Replicate') {
       print("would calc by replicate here!!")
       # subject_replicate_ident
@@ -595,12 +627,32 @@ server <- function(input, output, session) {
   # })
 
   output$diseaseSigRDS <- renderPlot({
-    if (input$CalcDiseaseSig == T) {
-      RDSseurat <- rdsSeurat()
-      top_dis_markers <- diseaseSigs() %>% group_by(cluster) %>% top_n(wt = avg_log2FC, n = 10)
-      sigHeatMap <- DoHeatmap(RDSseurat, features = top_dis_markers$gene, group.by = input$groupByRDS) + scale_fill_gradient2(low = muted("navy"), mid = "white", high = muted("red"))
-      sigHeatMap
-    }
+    req(input$CalcDiseaseSig)
+    sigs <- diseaseSigs()
+    req(nrow(sigs) > 0, "cluster" %in% colnames(sigs))
+    RDSseurat <- rdsSeurat()
+    top_dis_markers <- sigs %>% group_by(cluster) %>% top_n(wt = avg_log2FC, n = 10)
+
+    # DoHeatmap needs features present in the active assay's scale.data layer -- FindMarkers
+    # tests against all genes, so top markers can include genes scale.data never had (e.g.
+    # scale.data is often limited to variable features), which otherwise crashes DoHeatmap
+    # with a row-count mismatch instead of just skipping them.
+    current_assay <- DefaultAssay(RDSseurat)
+    scaled_genes <- rownames(RDSseurat[[current_assay]]@scale.data)
+    validate(need(length(scaled_genes) > 0,
+                  paste0("No scale.data found for assay '", current_assay, "' -- run ScaleData() on it before plotting.")))
+    top_dis_markers <- top_dis_markers[top_dis_markers$gene %in% scaled_genes, ]
+    validate(need(nrow(top_dis_markers) > 0,
+                  "None of the top marker genes were found in this assay's scale.data layer."))
+
+    # DoHeatmap's group.by handling drops cells with NA in the grouping column inconsistently
+    # between its internal steps (kept in the expression matrix, dropped from the group
+    # annotation), causing a row-count mismatch. These cells have no group label to plot anyway.
+    cells_to_plot <- colnames(RDSseurat)[!is.na(RDSseurat@meta.data[[input$groupByRDS]])]
+    RDSseurat <- subset(RDSseurat, cells = cells_to_plot)
+
+    sigHeatMap <- DoHeatmap(RDSseurat, features = top_dis_markers$gene, group.by = input$groupByRDS) + scale_fill_gradient2(low = muted("navy"), mid = "white", high = muted("red"))
+    sigHeatMap
   })
 
   # output$diseaseSigDownload <- downloadHandler(
@@ -915,20 +967,22 @@ server <- function(input, output, session) {
   })
 
   output$slicedDiseaseSig <- renderPlot({
-    if (input$calcSlicedDiseaseSigs == T){
-      top_dis_markers_sliced <- slicedDiseaseSigs() %>% group_by(slice) %>% group_by(cluster) %>% top_n(wt = avg_log2FC, n = 10)
-      sigHeatMap <- DoHeatmap(testdat, features = top_dis_markers_sliced$gene)
-      sigHeatMap
-    }
+    req(input$calcSlicedDiseaseSigs)
+    sigs <- slicedDiseaseSigs()
+    req(nrow(sigs) > 0, "cluster" %in% colnames(sigs), "slice" %in% colnames(sigs))
+    top_dis_markers_sliced <- sigs %>% group_by(slice) %>% group_by(cluster) %>% top_n(wt = avg_log2FC, n = 10)
+    sigHeatMap <- DoHeatmap(testdat, features = top_dis_markers_sliced$gene)
+    sigHeatMap
   })
 
   output$slicedDiseaseSigRDS <- renderPlot({
+    req(input$calcSlicedDiseaseSigsRDS)
+    sigs <- slicedDiseaseSigsRDS()
+    req(nrow(sigs) > 0, "cluster" %in% colnames(sigs), "slice" %in% colnames(sigs))
     RDSseurat <- rdsSeurat()
-    if (input$calcSlicedDiseaseSigsRDS == T){
-      top_dis_markers_sliced <- slicedDiseaseSigsRDS() %>% group_by(slice) %>% group_by(cluster) %>% top_n(wt = avg_log2FC, n = 10)
-      sigHeatMap <- DoHeatmap(RDSseurat, features = top_dis_markers_sliced$gene)
-      sigHeatMap
-    }
+    top_dis_markers_sliced <- sigs %>% group_by(slice) %>% group_by(cluster) %>% top_n(wt = avg_log2FC, n = 10)
+    sigHeatMap <- DoHeatmap(RDSseurat, features = top_dis_markers_sliced$gene)
+    sigHeatMap
   })
 
   output$slicedDiseaseSigTable <- renderTable({
@@ -1094,7 +1148,7 @@ server <- function(input, output, session) {
     }
 
     # else continue correlation calculation with selected or uploaded drug signatures
-    RDSseurat <- rdsSeurat()
+    RDSseurat <- rdsSeurat() #
     assay <- assay_to_use()
     layer <- layer_to_use()
 
@@ -1374,7 +1428,7 @@ server <- function(input, output, session) {
       paste(input$Custom_TCS_nameInput, "_connectivities_",Sys.Date(), ".csv", sep = "")
     },
     content = function(file) {
-      write.csv(as.data.frame(t(customTCScorrMat())), file, row.names = T)
+      write.csv(as.data.frame(customTCScorrMat()), file, row.names = T)
     }
   )
 
@@ -1419,7 +1473,7 @@ server <- function(input, output, session) {
       paste("RDS_upload_L1000_consensus_corrmat.csv", sep = "")
     },
     content = function(file) {
-      write.csv(as.data.frame(t(RDS_Final_CorrMat())), file, row.names = T) #customTCScorrMat
+      write.csv(as.data.frame(RDS_Final_CorrMat()), file, row.names = T) #customTCScorrMat
     }
   )
 
@@ -1446,6 +1500,8 @@ server <- function(input, output, session) {
       obj <- rdsSeurat()
 
       Final_Matrix <- as.data.frame(t(corrMatUpload()))
+
+
 
       print("rownames of Final_Matrix:")
       print(head(rownames(Final_Matrix)))
@@ -1494,14 +1550,14 @@ server <- function(input, output, session) {
   ##############################################################################
 
   # testing
-  output$finalMatrixAddedText <- renderText({
-    obj <- seurat_corradded()
-    Final_Matrix <- as.data.frame(t(RDS_Final_CorrMat()))
-    print(head(rownames(Final_Matrix)))
-    print(class(obj))
-    print(head(obj$alisertib))
-    # print("testing final matrix rendertext")
-  })
+  # output$finalMatrixAddedText <- renderText({
+  #   obj <- seurat_corradded()
+  #   Final_Matrix <- as.data.frame(t(RDS_Final_CorrMat()))
+  #   print(head(rownames(Final_Matrix)))
+  #   print(class(obj))
+  #   print(head(obj$alisertib))
+  #   # print("testing final matrix rendertext")
+  # })
 
   # Visualize compound consensus signature
   output$sigBar <- renderPlot({ # Here, need to filter for non-zero genes!
@@ -1553,8 +1609,21 @@ server <- function(input, output, session) {
   #   }
   # })
 
+  ## plot on step 5 for each compound
+
   output$refSignatureUMAPRDS <- renderPlot({
-    FeaturePlot(seurat_corradded(),
+
+    ## adding this part to prevent plot from populating all cells instead of just the selected cells of interested(controls vs injured)
+    RDSseurat <- seurat_corradded()
+    RDSseurat <- SetIdent(RDSseurat, value = input$groupByRDS)
+    selected_idents <- c(input$normalCellIdentsRDS, input$cancerCellIdentsRDS)
+
+
+    cells_outside_selection <- WhichCells(RDSseurat, idents = selected_idents, invert = TRUE)
+    RDSseurat@meta.data[cells_outside_selection, input$referenceCompound] <- NA
+    ###############
+
+    FeaturePlot(RDSseurat,
                 features = c(input$referenceCompound),
                 min.cutoff = input$sigMinCutoffRDS,
                 max.cutoff = input$sigMaxCutoffRDS,
@@ -1566,7 +1635,17 @@ server <- function(input, output, session) {
   })
 
   output$CustomRefSignatureUMAPRDS <- renderPlot({
-    FeaturePlot(seurat_custom_corradded(),
+
+    #### doing this with TCS plot as well........
+    RDSseuratTCS <- seurat_custom_corradded()
+    RDSseuratTCS <- SetIdent(RDSseuratTCS, value = input$groupByRDS)
+    selected_idents <- c(input$normalCellIdentsRDS, input$cancerCellIdentsRDS)
+
+    cells_outside_selection <- WhichCells(RDSseuratTCS, idents = selected_idents, invert = TRUE)
+    RDSseuratTCS@meta.data[cells_outside_selection, input$Custom_TCS_nameInput] <- NA
+    ###########
+
+    FeaturePlot(RDSseuratTCS,
                 features = c(input$Custom_TCS_nameInput),
                 min.cutoff = input$sigMinCutoff_customTCS,
                 max.cutoff = input$sigMaxCutoff_customTCS,
@@ -1879,7 +1958,7 @@ server <- function(input, output, session) {
 
 
     # Make a plot to show percentage of live vs dead cells...
-    liveDead <- data.frame(row.names = NULL, resistant = length(livingCells), sensitive = length(deadCells))
+    liveDead <- data.frame(row.names = NULL, resistant = length(intersect(livingCells, tumorCells)), sensitive = length(intersect(deadCells, tumorCells)))
     liveDead <- as.data.frame(t(liveDead))
     liveDead$liveDead <- rownames(liveDead)
     colnames(liveDead) <- c("Freq", "liveDead")
@@ -1950,6 +2029,14 @@ server <- function(input, output, session) {
         print(class(RDS_Final_CorrMat()))
         testSpearman <- as.data.frame(t(RDS_Final_CorrMat()))
       }
+      #ERROR: perturbation button
+      print("head(rownames(testSpearman)):")
+      print(head(rownames(testSpearman)))
+      print("head(colnames(RDSseurat)):")
+      print(head(colnames(RDSseurat)))
+      print(paste("Cell-name overlap count:", length(intersect(rownames(testSpearman), colnames(RDSseurat)))))
+
+
       tumorCells <- WhichCells(RDSseurat, idents = input$cancerCellIdentsRDS)
 
       compoundSpearmans <- RDSseurat@meta.data[input$referenceCompound] # maybe need referenceCompoundRDS
@@ -2258,9 +2345,26 @@ server <- function(input, output, session) {
         testSpearman <- as.data.frame(t(RDS_Final_CorrMat()))
       }
       tumorCells <- WhichCells(RDSseurat, idents = input$cancerCellIdentsRDS)
+
+      print("tumorCells:")
+      print(head(tumorCells))
+      print(length(tumorCells))
+
+
       compoundSpearmans <- RDSseurat@meta.data[input$referenceCompound]
       compoundSpearmans <- subset(compoundSpearmans, rownames(compoundSpearmans) %in% tumorCells)
       testSpearman <- testSpearman[which(rownames(testSpearman) %in% tumorCells),]
+
+      print("compoundSpearmans:")
+      print(head(compoundSpearmans))
+      print(length(compoundSpearmans))
+
+      print("testSpearman: ")
+      print(head(testSpearman))
+      print(length(testSpearman))
+
+
+
       z_matrix <- 0.5 * log((1 + testSpearman) / (1 - testSpearman)) # apply Fisher z-transformation
       resistantCells <- resistantCells()
       sensitiveCells <- sensitiveCells()
@@ -2303,7 +2407,10 @@ server <- function(input, output, session) {
       sensitivity <- factor(sensitivity)
       subjectID <- factor(subjectID)
 
-
+      print("sensitivity levels going into model.matrix:")
+      print(table(sensitivity))
+      print("subjectID levels going into model.matrix:")
+      print(table(subjectID))
 
       design <- model.matrix(~ subjectID + sensitivity)
       z_matrix <- t(z_matrix)
