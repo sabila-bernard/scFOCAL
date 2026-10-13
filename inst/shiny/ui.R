@@ -24,22 +24,22 @@ library(EnhancedVolcano)
 library(DT)
 library(scFOCAL)
 
- options(shiny.maxRequestSize = 30000*1024^2) # increase limit to 15gb?
+options(shiny.maxRequestSize = 30000*1024^2) # increase limit to 15gb?
 
 
 ################################################################################
 #
 ################################################################################
 
- # # LINCS Response Signature Data
- # LINCS.ResponseSigs <- read.delim(
- #   file = "matPH3_2_1_0.2_0.3_L1000_Batch2017_Regina_removed.txt", header = T)
- # row.names(LINCS.ResponseSigs) <- LINCS.ResponseSigs$Genes
- # LINCS.ResponseSigs <- na.omit(LINCS.ResponseSigs)
- # newNames <- gsub("-", ".", rownames(LINCS.ResponseSigs))
- # rownames(LINCS.ResponseSigs) <- newNames
- # L1000_genes <- colnames(LINCS.ResponseSigs)
- # L1000_compounds <- rownames(LINCS.ResponseSigs)
+# # LINCS Response Signature Data
+# LINCS.ResponseSigs <- read.delim(
+#   file = "matPH3_2_1_0.2_0.3_L1000_Batch2017_Regina_removed.txt", header = T)
+# row.names(LINCS.ResponseSigs) <- LINCS.ResponseSigs$Genes
+# LINCS.ResponseSigs <- na.omit(LINCS.ResponseSigs)
+# newNames <- gsub("-", ".", rownames(LINCS.ResponseSigs))
+# rownames(LINCS.ResponseSigs) <- newNames
+# L1000_genes <- colnames(LINCS.ResponseSigs)
+# L1000_compounds <- rownames(LINCS.ResponseSigs)
 
 ui <- fluidPage(
   tags$script(src = "https://kit.fontawesome.com/070e476711.js"),
@@ -79,7 +79,7 @@ ui <- fluidPage(
                  tags$i(class="fa-sharp fa-solid fa-magnifying-glass-chart"),
                  tags$span("- Run scFOCAL - dev")
                ), #put contents for actual application here
-##### 1. FILE UPLOAD  ####################################################################################################################################
+               ##### 1. FILE UPLOAD  ####################################################################################################################################
                tabsetPanel(
                  tabPanel(tags$div(
                    tags$i(class = "fa-sharp fa-solid fa-upload"),
@@ -116,10 +116,10 @@ ui <- fluidPage(
                                     choices = NULL
                                   )
 
-                                  )
+                 )
 
                  ),
-#### 2. PRE- PROCESSING ############################################################################################################################################################################################
+                 #### 2. PRE- PROCESSING ############################################################################################################################################################################################
                  tabPanel(tags$div(
                    tags$i(class = "fa-sharp fa-solid fa-gears"),
                    tags$span("2. Pre-processing"),
@@ -179,7 +179,7 @@ ui <- fluidPage(
                  )
 
                  ),
-#### 3. DISEASE SIGNATURE #####################################################################################################################
+                 #### 3. DISEASE SIGNATURE #####################################################################################################################
                  tabPanel(tags$div(
                    tags$i(class = "fa-solid fa-signature"),
                    tags$span("3. Disease Signatures"),
@@ -333,7 +333,7 @@ ui <- fluidPage(
                  )
 
                  ),
-##### 4. CELL DRUG CONNECTIVITY ###########################################################################################################################################################################
+                 ##### 4. CELL DRUG CONNECTIVITY ###########################################################################################################################################################################
                  tabPanel(tags$div(
                    tags$i(class = "fa-sharp fa-solid fa-pills"),
                    tags$span("4. Cell-Drug Connectivity"),
@@ -883,7 +883,7 @@ ui <- fluidPage(
                                   ) ################################################################################################################################################################### < End of controls uploaded conditional Panel...
                  )
                  ),
-##### IN SILICO PERTUBATION ###############################################################################################################
+                 ##### IN SILICO PERTUBATION ###############################################################################################################
                  tabPanel(tags$div(
                    tags$i(class = "fa-sharp fa-solid fa-magnifying-glass-chart"),
                    tags$span("5. In Silico Perturbation"), # NEED TO UPDATE CONDITIONS SO THAT RESULTS ARE ONLY PLOTTED UNDER L1000 or CUSTOM from radio buttons...
@@ -1422,10 +1422,10 @@ ui <- fluidPage(
                h1("License Agreement"),
                # hr(),
                br(), # Note this is a draft... I dont know if this is right. Not a lawyer!
-               p(strong("1. The Board of Trustees of the Georgetown University (“Georgetown”) provides scFOCAL software and code (“Service”) free of charge for non-commercial use only. Use of the Service by any commercial entity for any purpose, including research, is prohibited.")),
+               p(strong("1. The Board of Trustees of the Georgetown University (?Georgetown?) provides scFOCAL software and code (?Service?) free of charge for non-commercial use only. Use of the Service by any commercial entity for any purpose, including research, is prohibited.")),
                p(strong("2. By using the Service, you agree to be bound by the terms of this Agreement. Please read it carefully.")),
-               p(strong("3. You agree not to use the Service for commercial advantage, or in the course of for-profit activities. You agree not to use the Service on behalf of any organization that is not a non-profit organization. Commercial entities wishing to use this Service should contact Georgetown University’s Office of Technology Licensing.")),
-               p(strong("4. THE SERVICE IS OFFERED “AS IS”, AND, TO THE EXTENT PERMITTED BY LAW, GEORGETOWN MAKES NO REPRESENTATIONS AND EXTENDS NO WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED. GEORGETOWN SHALL NOT BE LIABLE FOR ANY CLAIMS OR DAMAGES WITH RESPECT TO ANY LOSS OR OTHER CLAIM BY YOU OR ANY THIRD PARTY ON ACCOUNT OF, OR ARISING FROM THE USE OF THE SERVICE. YOU HEREBY AGREE TO DEFEND AND INDEMNIFY GEORGETOWN, ITS TRUSTEES, EMPLOYEES, OFFICERS, STUDENTS, AGENTS, FACULTY, REPRESENTATIVES, AND VOLUNTEERS (“GEORGETOWN INDEMNITEES”) FROM ANY LOSS OR CLAIM ASSERTED AGAINST GEORGETOWN INDEMNITEES ARISING FROM YOUR USE OF THE SERVICE.")),
+               p(strong("3. You agree not to use the Service for commercial advantage, or in the course of for-profit activities. You agree not to use the Service on behalf of any organization that is not a non-profit organization. Commercial entities wishing to use this Service should contact Georgetown University?s Office of Technology Licensing.")),
+               p(strong("4. THE SERVICE IS OFFERED ?AS IS?, AND, TO THE EXTENT PERMITTED BY LAW, GEORGETOWN MAKES NO REPRESENTATIONS AND EXTENDS NO WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED. GEORGETOWN SHALL NOT BE LIABLE FOR ANY CLAIMS OR DAMAGES WITH RESPECT TO ANY LOSS OR OTHER CLAIM BY YOU OR ANY THIRD PARTY ON ACCOUNT OF, OR ARISING FROM THE USE OF THE SERVICE. YOU HEREBY AGREE TO DEFEND AND INDEMNIFY GEORGETOWN, ITS TRUSTEES, EMPLOYEES, OFFICERS, STUDENTS, AGENTS, FACULTY, REPRESENTATIVES, AND VOLUNTEERS (?GEORGETOWN INDEMNITEES?) FROM ANY LOSS OR CLAIM ASSERTED AGAINST GEORGETOWN INDEMNITEES ARISING FROM YOUR USE OF THE SERVICE.")),
                p(strong("5. All rights not expressly granted to you in this Agreement are reserved and retained by GEORGETOWN or its licensors or content providers. This Agreement provides no license under any patent.")),
                p(strong("6. You agree that this Agreement and any dispute arising under it is governed by the laws of the District of Columbia, United States of America, applicable to agreements negotiated, executed, and performed within the DISTRICT OF COLUMBIA")),
                p(strong("7. Subject to your compliance with the terms and conditions set forth in this Agreement, GEORGETOWN grants you a revocable, non-exclusive, non-transferable right to access and make use of the Service.")),
